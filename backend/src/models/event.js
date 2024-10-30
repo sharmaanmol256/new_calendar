@@ -1,31 +1,25 @@
+// backend/models/user.js
 const mongoose = require('mongoose');
 
-const eventSchema = new mongoose.Schema({
-  userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
-  googleEventId: {
+const userSchema = new mongoose.Schema({
+  email: {
     type: String,
-    required: true
+    required: true,
+    unique: true
   },
-  summary: {
-    type: String,
-    required: true
+  accessToken: {
+    type: String
   },
-  startTime: {
-    type: Date,
-    required: true
+  refreshToken: {
+    type: String
   },
-  endTime: {
-    type: Date,
-    required: true
+  tokenExpiry: {
+    type: Date
   },
-  createdAt: {
+  lastLogin: {
     type: Date,
     default: Date.now
   }
 });
 
-module.exports = mongoose.model('Event', eventSchema);
+module.exports = mongoose.model('User', userSchema);

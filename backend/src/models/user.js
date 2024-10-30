@@ -8,20 +8,17 @@ const userSchema = new mongoose.Schema({
   },
   accessToken: {
     type: String,
-    required: true
   },
   refreshToken: {
     type: String,
-    required: true
   },
   tokenExpiry: {
     type: Date,
-    required: true
   },
-  createdAt: {
+  lastLogin: {
     type: Date,
     default: Date.now
   }
-});
+}, { timestamps: true });
 
 module.exports = mongoose.model('User', userSchema);
