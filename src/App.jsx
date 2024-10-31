@@ -18,7 +18,7 @@ import EventTable from './components/ui/EventTable';
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://mern-calendar-app-61i9.onrender.com';
 
-// Create axios instance with base configuration
+// Create axios instance with base config
 const axiosInstance = axios.create({
   baseURL: API_URL,
   withCredentials: true
