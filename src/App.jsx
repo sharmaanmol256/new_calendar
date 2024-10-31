@@ -16,40 +16,65 @@ import {
 import { Input } from "./components/ui/Input";
 import EventTable from './components/ui/EventTable';
 
-const API_URL = import.meta.env.VITE_API_URL || 'https://mern-calendar-app-61i9.onrender.com';
+// Get API URL from environment variables with validation
+const API_URL = import.meta.env.VITE_API_URL;
+if (!API_URL) {
+  console.error('VITE_API_URL is not defined in environment variables');
+}
 
-// Create axios instance with base configuration
+// Enhanced axios instance
 const axiosInstance = axios.create({
   baseURL: API_URL,
-  withCredentials: true
+  withCredentials: true,
+  timeout: 10000, // 10 second timeout
+  headers: {
+    'Content-Type': 'application/json'
+  }
 });
 
-// Add request interceptor to include email in all requests
+// Enhanced request interceptor
 axiosInstance.interceptors.request.use(
   (config) => {
     const email = localStorage.getItem('userEmail');
     if (email) {
-      // Add email to query params for GET requests
       if (config.method === 'get') {
         config.params = { ...config.params, email };
-      }
-      // Add email to body for other requests
-      else {
+      } else {
         config.data = { ...config.data, email };
       }
     }
+    // Log outgoing requests in development
+    if (import.meta.env.DEV) {
+      console.log('API Request:', {
+        method: config.method,
+        url: config.url,
+        data: config.data,
+        params: config.params
+      });
+    }
     return config;
   },
-  (error) => Promise.reject(error)
+  (error) => {
+    console.error('Request interceptor error:', error);
+    return Promise.reject(error);
+  }
 );
 
-// Add response interceptor to handle auth errors
+// Enhanced response interceptor
 axiosInstance.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    if (import.meta.env.DEV) {
+      console.log('API Response:', {
+        status: response.status,
+        data: response.data
+      });
+    }
+    return response;
+  },
   async (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('userEmail');
-      window.location.href = '/';
+      window.location.href = '/?error=session_expired';
     }
     return Promise.reject(error);
   }
@@ -69,41 +94,52 @@ const App = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState(null);
 
-  // Fetch events function
-  const fetchEvents = useCallback(async () => {
+  // Enhanced fetch events function
+  const fetchEvents = useCallback(async (showLoadingState = true) => {
     if (!userEmail) return;
 
     try {
+      if (showLoadingState) setIsLoading(true);
       setError(null);
-      console.log('Fetching events for:', userEmail);
+
       const response = await axiosInstance.get('/api/events');
       setEvents(response.data || []);
+      setLastRefresh(new Date());
     } catch (error) {
       console.error('Failed to fetch events:', error);
       if (error.response?.status === 401) {
         setIsSignedIn(false);
         setUserEmail(null);
         localStorage.removeItem('userEmail');
-        setError('Session expired. Please sign in again.');
+        setError('Your session has expired. Please sign in again.');
       } else {
-        setError('Failed to load events. Please try again.');
+        setError('Unable to load events. Please try again later.');
       }
+    } finally {
+      if (showLoadingState) setIsLoading(false);
     }
   }, [userEmail]);
 
-  // Initialize auth state
+  // Enhanced auth check
   useEffect(() => {
     const checkAuth = async () => {
       try {
         setIsLoading(true);
         setError(null);
 
-        // Check URL parameters for OAuth response
         const params = new URLSearchParams(window.location.search);
         const authSuccess = params.get('auth-success');
         const email = params.get('email');
         const authError = params.get('auth-error');
+        const sessionExpired = params.get('error') === 'session_expired';
+
+        if (sessionExpired) {
+          setError('Your session has expired. Please sign in again.');
+          window.history.replaceState({}, '', window.location.pathname);
+          return;
+        }
 
         if (authSuccess === 'true' && email) {
           console.log('Auth callback successful:', email);
@@ -122,26 +158,25 @@ const App = () => {
           return;
         }
 
-        // Check existing session
         const savedEmail = localStorage.getItem('userEmail');
         if (savedEmail) {
-          console.log('Checking existing session for:', savedEmail);
-          const response = await axiosInstance.get(`/api/auth/check?email=${savedEmail}`);
-          
-          if (response.data.authenticated) {
-            console.log('Session valid for:', savedEmail);
-            setIsSignedIn(true);
-            setUserEmail(savedEmail);
-            await fetchEvents();
-          } else {
-            console.log('Session invalid for:', savedEmail);
+          try {
+            const response = await axiosInstance.get(`/api/auth/check?email=${savedEmail}`);
+            
+            if (response.data.authenticated) {
+              console.log('Session valid for:', savedEmail);
+              setIsSignedIn(true);
+              setUserEmail(savedEmail);
+              await fetchEvents(false);
+            } else {
+              console.log('Session invalid for:', savedEmail);
+              localStorage.removeItem('userEmail');
+            }
+          } catch (error) {
+            console.error('Auth check failed:', error);
             localStorage.removeItem('userEmail');
           }
         }
-      } catch (error) {
-        console.error('Auth check failed:', error);
-        localStorage.removeItem('userEmail');
-        setError('Failed to verify authentication');
       } finally {
         setIsLoading(false);
       }
@@ -150,7 +185,7 @@ const App = () => {
     checkAuth();
   }, [fetchEvents]);
 
-  // Handle sign in
+  // Enhanced sign in handler
   const handleSignIn = async () => {
     try {
       setIsLoading(true);
@@ -161,17 +196,17 @@ const App = () => {
       if (response.data.url) {
         window.location.href = response.data.url;
       } else {
-        throw new Error('No authorization URL received');
+        throw new Error('Unable to get authentication URL');
       }
     } catch (error) {
       console.error('Sign in failed:', error);
-      setError('Failed to initiate sign in');
+      setError('Unable to initiate sign in. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Handle sign out
+  // Enhanced sign out handler
   const handleSignOut = async () => {
     try {
       setError(null);
@@ -188,11 +223,11 @@ const App = () => {
       window.location.href = '/';
     } catch (error) {
       console.error('Sign out failed:', error);
-      setError('Failed to sign out properly');
+      setError('Unable to sign out properly. Please try again.');
     }
   };
 
-  // Handle create event
+  // Enhanced create event handler
   const handleCreateEvent = async () => {
     if (!isSignedIn || !userEmail) {
       setError('Please sign in to create events');
@@ -203,27 +238,32 @@ const App = () => {
       setIsSubmitting(true);
       setError(null);
 
+      // Validate event data
+      if (!newEvent.name?.trim()) {
+        throw new Error('Event name is required');
+      }
+
+      if (!newEvent.date || !newEvent.time) {
+        throw new Error('Event date and time are required');
+      }
+
       const startDateTime = new Date(`${newEvent.date}T${newEvent.time}`);
+      if (isNaN(startDateTime.getTime())) {
+        throw new Error('Invalid date or time');
+      }
+
       if (startDateTime < new Date()) {
         throw new Error('Cannot create events in the past');
       }
 
       const endDateTime = new Date(startDateTime.getTime() + (60 * 60 * 1000));
 
-      console.log('Creating event:', {
-        summary: newEvent.name,
-        startDateTime,
-        endDateTime,
-        email: userEmail
-      });
-
       const response = await axiosInstance.post('/api/events', {
-        summary: newEvent.name,
+        summary: newEvent.name.trim(),
         startDateTime: startDateTime.toISOString(),
         endDateTime: endDateTime.toISOString()
       });
 
-      console.log('Event created:', response.data);
       await fetchEvents();
       setShowEventDialog(false);
       setNewEvent({ name: '', date: '', time: '' });
@@ -233,7 +273,7 @@ const App = () => {
         setIsSignedIn(false);
         setUserEmail(null);
         localStorage.removeItem('userEmail');
-        setError('Session expired. Please sign in again.');
+        setError('Your session has expired. Please sign in again.');
       } else {
         setError(error.response?.data?.error || error.message || 'Failed to create event');
       }
@@ -242,7 +282,17 @@ const App = () => {
     }
   };
 
-  // Loading state
+  // Auto-refresh events periodically
+  useEffect(() => {
+    if (isSignedIn && userEmail) {
+      const refreshInterval = setInterval(() => {
+        fetchEvents(false);
+      }, 300000); // Refresh every 5 minutes
+
+      return () => clearInterval(refreshInterval);
+    }
+  }, [isSignedIn, userEmail, fetchEvents]);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -251,6 +301,7 @@ const App = () => {
     );
   }
 
+  // The rest of your JSX remains the same...
   return (
     <div className="container mx-auto p-4">
       <Card>
@@ -258,7 +309,6 @@ const App = () => {
           <CardTitle>Google Calendar Integration</CardTitle>
         </CardHeader>
         <CardContent>
-          {/* Error Display */}
           {error && (
             <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4 relative">
               <span className="block sm:inline">{error}</span>
@@ -271,7 +321,6 @@ const App = () => {
             </div>
           )}
 
-          {/* Auth Button */}
           <div className="flex items-center gap-4 mb-6">
             <Button 
               onClick={isSignedIn ? handleSignOut : handleSignIn}
@@ -288,7 +337,6 @@ const App = () => {
             )}
           </div>
 
-          {/* Main Content */}
           {isSignedIn ? (
             <>
               <Button 
@@ -303,15 +351,15 @@ const App = () => {
                 events={events} 
                 onRefresh={fetchEvents}
                 userEmail={userEmail}
+                lastRefresh={lastRefresh}
               />
             </>
           ) : (
             <div className="text-center py-8 text-red-600">
-              Please sign in to create events
+              Please sign in to create and manage events
             </div>
           )}
 
-          {/* Create Event Dialog */}
           <Dialog 
             open={showEventDialog} 
             onOpenChange={(open) => {
