@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_URL = import.meta.env.VITE_API_URL || 'https://mern-calendar-app-61i9.onrender.com';
 
 const axiosInstance = axios.create({
   baseURL: API_URL,
